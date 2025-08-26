@@ -1,0 +1,83 @@
+[project]
+channels = ["conda-forge"]
+name = "django-fsspec"
+platforms = ["linux-64", "osx-arm64"] # "win-64",
+repository = "https://github.com/GetThePointGit/django-fsspec"
+
+
+[feature.dev.tasks]
+# pixi run ...
+sort_imports = "ruff check  ./**/*.py --select I --fix --force-exclude"
+fmt = "ruff format ./**/*.py --force-exclude"
+style = { depends-on = ["sort_imports", "fmt"] }
+
+pre-commit-install = "pre-commit install --install-hooks -t=pre-push" #-t=pre-commit
+postinstall = { depends-on = ["pre-commit-install"] }
+pre-commit-run = "pre-commit run --all-files"
+
+
+[feature.test.tasks]
+# test
+tests = { cmd = "pytest --cov-report term-missing --cov=django_fsspec --cov-report=json", env = { DJANGO_SETTINGS_MODULE = "tests.settings", PYTHONWARNINGS = "always", PYTHONDONTWRITEBYTECODE = "1" } }
+# todo: add AWS_CONFIG_FILE = ""$PIXI_PROJECT_ROOT/tests/no_such_file.conf" - with secrets for github actions
+tox = { cmd = "tox ", env = { DJANGO_SETTINGS_MODULE = "tests.settings", PYTHONWARNINGS = "always", PYTHONDONTWRITEBYTECODE = "1" } }
+# build
+build = "hatch build --clean"
+twine_check = "twine check dist/*"
+
+
+[dependencies]
+python = ">3.11"
+
+[pypi-dependencies]
+# django = ">=5.0"
+# fsspec = ">=2025.2.0"
+django-fsspec = { path = ".", editable = true }
+
+[feature.dev.dependencies]
+pre-commit = "*"
+pixi-pycharm = ">=0.0.8"
+
+[feature.test.dependencies]
+pytest = "*"
+pytest-cov = "*"
+hatchling = "*"
+twine = "*"
+ruff = "*"
+tox = "*"
+
+[feature.test.pypi-dependencies]
+s3fs = ">=2025.2.0"
+
+# for now, keep tox for matrix testing...
+#[feature.py11.dependencies]
+#python = "3.11.*"
+#[feature.py12.dependencies]
+#python = "3.12.*"
+#[feature.py13.dependencies]
+#python = "3.13.*"
+#
+#[feature.django50.pypi-dependencies]
+#django = ">=5.0, <5.1"
+#[feature.django51.pypi-dependencies]
+#django = ">=5.1, <5.2"
+#[feature.django52.pypi-dependencies]
+#django = ">=5.2, <6.0"
+#[feature.django-main.pypi-dependencies]
+## install from main branch
+#django = { git = "https://github.com/django/django.git", branch = "main" }
+
+[environments]
+dev = { features=["dev", "test"] }
+test = { features=["test"] }
+
+#test-py11-django50 = { features=["py11", "django50", "test"] }
+#test-py11-django51 = { features=["py11", "django51", "test"], no-default-feature = false }
+#test-py11-django52 = { features=["py11", "django52", "test"], no-default-feature = false }
+#test-py12-django50 = { features=["py12", "django50", "test"], no-default-feature = false }
+#test-py12-django51 = { features=["py12", "django51", "test"], no-default-feature = false }
+#test-py12-django52 = { features=["py12", "django52", "test"], no-default-feature = false }
+#test-py13-django50 = { features=["py13", "django50", "test"], no-default-feature = false }
+#test-py13-django51 = { features=["py13", "django51", "test"], no-default-feature = false }
+#test-py13-django52 = { features=["py13", "django52", "test"], no-default-feature = false }
+# test-py13-django-main = { features=["py13", "django-main", "test"], no-default-feature = false }
