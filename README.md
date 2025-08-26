@@ -37,6 +37,16 @@ STORAGES = {
 
 
 
+## build
+
+
+install tools
+```
+    brew install hatch
+    pixi global install hatch
+```
+
+
 
 
 
