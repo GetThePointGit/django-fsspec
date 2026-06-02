@@ -23,6 +23,8 @@ success.
   produced no destination the source is preserved and ``IOError`` is
   raised — previous behavior was to ``rm`` the source unconditionally,
   which could cause data loss.
+- **Drop Python 3.11 support.** Minimum is now Python 3.12. The test matrix
+  (CI, ``tox``, ``pixi``) and ``requires-python`` are updated accordingly.
 
 0.1.2 (unreleased)
 ------------------

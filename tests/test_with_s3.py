@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 import unittest
 from io import BytesIO
@@ -215,6 +216,57 @@ class TestWithS3(unittest.TestCase):
         contents = response.get("Contents")
         self.assertFalse(contents is not None and [obj.get("Key") for obj in contents if "testc.txt" in obj.get("Key")])
         self.assertFalse(Path(self.root_fs_default, "testdef.txt").exists())
+
+    def test_zero_byte_cross_cluster_cp_does_not_hang(self):
+        """Regression guard: 0-byte cp_file across two S3 clusters completes.
+
+        Originally added while investigating a suspected hang on this
+        scenario. The investigation showed the path actually works on
+        the cluster pair behind ``a/`` and ``c/``; the test stays as a
+        guard so any future regression of that finding fails fast on a
+        wall-clock budget instead of blocking the whole suite.
+        """
+        fs = self.nested_fs
+        for path in ("a/empty/zero.bin", "c/empty/zero.bin"):
+            try:
+                fs.rm(path)
+            except FileNotFoundError:
+                pass
+
+        with fs.open("a/empty/zero.bin", "wb"):
+            pass
+        self.assertEqual(0, fs.size("a/empty/zero.bin"))
+
+        result = {}
+
+        def _do_copy():
+            try:
+                fs.cp_file("a/empty/zero.bin", "c/empty/zero.bin")
+                result["ok"] = True
+            except Exception as exc:
+                result["error"] = exc
+
+        budget_seconds = 30.0
+        worker = threading.Thread(target=_do_copy, daemon=True)
+        worker.start()
+        worker.join(timeout=budget_seconds)
+
+        try:
+            self.assertFalse(
+                worker.is_alive(),
+                f"cp_file did not complete within {budget_seconds:.0f}s on a 0-byte cross-cluster copy",
+            )
+            if "error" in result:
+                raise result["error"]
+            self.assertTrue(fs.exists("c/empty/zero.bin"))
+            self.assertEqual(0, fs.size("c/empty/zero.bin"))
+            self.assertTrue(fs.exists("a/empty/zero.bin"))
+        finally:
+            for path in ("a/empty/zero.bin", "c/empty/zero.bin"):
+                try:
+                    fs.rm(path)
+                except FileNotFoundError:
+                    pass
 
 
 class TestPresignedUrls(unittest.TestCase):
