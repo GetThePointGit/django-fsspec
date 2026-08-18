@@ -25,6 +25,19 @@ success.
   which could cause data loss.
 - **Drop Python 3.11 support.** Minimum is now Python 3.12. The test matrix
   (CI, ``tox``, ``pixi``) and ``requires-python`` are updated accordingly.
+- Fixed ``unwrap_s3_target`` (used by ``resolve_s3_target``,
+  ``FsspecStorage.url_direct()`` and ``FsspecStorage.url_signed()``)
+  mis-resolving the S3 bucket when a ``DirFileSystem``'s ``relative_to_path``
+  combines a bucket name with extra key-prefix segments (e.g.
+  ``"my-bucket/uploads/2026"``). Previously the *entire* prefixed string was
+  treated as the bucket, producing an invalid bucket name — this broke
+  ``url_direct()`` (malformed virtual-hosted URL) and
+  ``url_signed(method="PUT")`` (botocore rejected the multi-segment
+  ``Bucket`` param). Bucket/key are now split via ``s3fs``'s own
+  ``S3FileSystem.split_path()``, and the path fed to it is built via
+  ``DirFileSystem._join()`` so it matches exactly what real I/O
+  (``open``/``get``/``put``) resolves to. Normal storage reads/writes were
+  never affected.
 
 0.1.2 (unreleased)
 ------------------

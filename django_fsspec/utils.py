@@ -119,7 +119,11 @@ def unwrap_s3_target(fs: AbstractFileSystem, path: str):
         `path` is treated as the bucket.
     path : str
         Path within `fs` (i.e. relative to the DirFileSystem root, or the
-        full `bucket/key` when `fs` is a bare `S3FileSystem`).
+        full `bucket/key` when `fs` is a bare `S3FileSystem`). The
+        `DirFileSystem` root (`relative_to_path`) may itself combine a
+        bucket name with extra key-prefix segments (e.g.
+        `"my-bucket/uploads/2026"`) — the bucket/key split below accounts
+        for that.
 
     Returns
     -------
@@ -138,19 +142,26 @@ def unwrap_s3_target(fs: AbstractFileSystem, path: str):
         raise NotImplementedError("s3fs is not installed; install django-fsspec[s3] for S3 support")
 
     if isinstance(fs, DirFileSystem):
-        bucket = str(fs.path)
         inner = fs.fs
-        key = path
+        full_path = fs._join(path)
     else:
         inner = fs
-        bucket, _, key = path.partition("/")
-        if not bucket or not key:
-            raise NotImplementedError(f"Bare S3FileSystem requires 'bucket/key' path, got {path!r}")
+        full_path = path
 
     if not isinstance(inner, S3FileSystem):
         raise NotImplementedError(
             f"Sub-filesystem is {type(inner).__name__}, not S3FileSystem; signing and direct URLs require an S3 backend"
         )
+
+    # `split_path` (from s3fs) correctly separates 'bucket/key/with/slashes'.
+    # A plain `str(fs.path)` would leak any extra key-prefix segments in
+    # `relative_to_path` (e.g. 'my-bucket/uploads/2026') into `bucket`,
+    # breaking presigned/direct URL generation even though normal storage
+    # I/O (which goes through `DirFileSystem._join` + `s3fs` directly)
+    # is unaffected.
+    bucket, key, _version_id = inner.split_path(full_path)
+    if not bucket or not key:
+        raise NotImplementedError(f"S3 path requires both a bucket and key, got {full_path!r}")
     return inner, bucket, key
 
 
