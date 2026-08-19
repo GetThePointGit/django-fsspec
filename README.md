@@ -71,8 +71,8 @@ default_storage.save("hello.txt", ContentFile(b"hi"))
 # 1a (file) → /var/myapp/media/hello.txt
 # 1b (s3)   → s3://my-bucket/hello.txt
 
-default_storage.exists("hello.txt")      # True
-default_storage.size("hello.txt")        # 2
+default_storage.exists("hello.txt")  # True
+default_storage.size("hello.txt")  # 2
 with default_storage.open("hello.txt") as f:
     print(f.read())
 
@@ -107,19 +107,22 @@ STORAGES = {
                     "upload": {
                         "protocol": "s3",
                         "endpoint_url": S3_ENDPOINT,
-                        "key": S3_KEY, "secret": S3_SECRET,
+                        "key": S3_KEY,
+                        "secret": S3_SECRET,
                         "relative_to_path": "myapp-upload",
                     },
                     "video": {
                         "protocol": "s3",
                         "endpoint_url": S3_ENDPOINT,
-                        "key": S3_KEY, "secret": S3_SECRET,
+                        "key": S3_KEY,
+                        "secret": S3_SECRET,
                         "relative_to_path": "myapp-video",
                     },
                     "archive": {
                         "protocol": "s3",
                         "endpoint_url": S3_ENDPOINT,
-                        "key": S3_KEY, "secret": S3_SECRET,
+                        "key": S3_KEY,
+                        "secret": S3_SECRET,
                         "relative_to_path": "myapp-archive",
                     },
                     # Fallback for unmatched prefixes — send to local disk.
@@ -178,7 +181,8 @@ STORAGES = {
                 "base_fs": {
                     "protocol": "s3",
                     "endpoint_url": S3_ENDPOINT,
-                    "key": S3_KEY, "secret": S3_SECRET,
+                    "key": S3_KEY,
+                    "secret": S3_SECRET,
                     "relative_to_path": "production-bucket",
                 },
             },
