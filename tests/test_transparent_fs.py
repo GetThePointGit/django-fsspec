@@ -99,6 +99,65 @@ class TestTransparentFS(unittest.TestCase):
         # actual content yet so neither name should appear in the listing.
         self.assertEqual(names, [])
 
+    # --- walk / find ----------------------------------------------------------
+    #
+    # Regression tests for issue #10: the old hand-rolled walk() override
+    # ignored the ``path`` argument, and its tombstone handling replaced the
+    # accumulator dict with a list, after which iteration crashed with
+    # "'list' object has no attribute 'items'". The override is gone; walk()
+    # now comes from AbstractFileSystem and is built on the (correct) ls().
+
+    def _seed_tree(self):
+        """Nested content in both layers sharing the directory ``docs/``."""
+        Path(root_base_fs, "docs").mkdir()
+        Path(root_base_fs, "docs", "base.txt").write_bytes(b"b")
+        Path(root_base_fs, "top-base.txt").write_bytes(b"tb")
+        Path(root_transparent_fs, "docs").mkdir()
+        Path(root_transparent_fs, "docs", "overlay.txt").write_bytes(b"o")
+        Path(root_transparent_fs, "top-overlay.txt").write_bytes(b"to")
+
+    def test_walk_merges_both_layers(self):
+        self._seed_tree()
+        seen = {p: (sorted(dirs), sorted(files)) for p, dirs, files in self.fs.walk("")}
+        self.assertEqual(seen[""], (["docs"], ["top-base.txt", "top-overlay.txt"]))
+        self.assertEqual(seen["docs"], ([], ["base.txt", "overlay.txt"]))
+
+    def test_walk_respects_path_argument(self):
+        """The old override always walked from the root, whatever ``path``
+        was passed."""
+        self._seed_tree()
+        seen = dict.fromkeys(p for p, _, _ in self.fs.walk("docs"))
+        self.assertEqual(list(seen), ["docs"])
+
+    def test_walk_with_tombstone_does_not_crash_and_hides_entry(self):
+        self._seed_tree()
+        self.fs.rm("docs/base.txt")  # tombstone on the overlay
+        seen = {p: sorted(files) for p, _, files in self.fs.walk("")}
+        self.assertEqual(seen["docs"], ["overlay.txt"])
+
+    def test_walk_detail_true_yields_entry_dicts(self):
+        """walk(detail=True) must yield ({name: info}, {name: info}) dicts;
+        the old override mangled these into plain name lists."""
+        self._seed_tree()
+        for _path, dirs, files in self.fs.walk("", detail=True):
+            self.assertIsInstance(dirs, dict)
+            self.assertIsInstance(files, dict)
+            for info in (*dirs.values(), *files.values()):
+                self.assertIn("type", info)
+
+    def test_find_lists_files_from_both_layers(self):
+        """find() is built on walk(); this is the file_check.populate_source
+        scenario that crashed in production."""
+        self._seed_tree()
+        found = sorted(self.fs.find(""))
+        self.assertEqual(
+            found,
+            ["docs/base.txt", "docs/overlay.txt", "top-base.txt", "top-overlay.txt"],
+        )
+        detailed = self.fs.find("", detail=True)
+        self.assertIsInstance(detailed, dict)
+        self.assertEqual(sorted(detailed), found)
+
     # --- rm -------------------------------------------------------------------
 
     def test_rm_overlay_only_file(self):

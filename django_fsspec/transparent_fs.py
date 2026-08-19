@@ -268,50 +268,12 @@ class TransparentFileSystem(AbstractFileSystem):
                 return True
         return False
 
-    def walk(self, path, maxdepth=None, **kwargs):  # noqa: C901, PLR0912
-        # zip values of transparent_fs and base_fs
-        # make one big dictionary
-        out = {
-            base_path: {"dirs": dirs, "files": files}
-            for base_path, dirs, files in self.base_fs.walk("", maxdepth=maxdepth, **kwargs)
-        }
-        # first loop and delete all paths that are deleted or replaced
-        for base_path, dirs, files in self.transparent_fs.walk("", maxdepth=maxdepth, **kwargs):
-            replaced = False
-            if base_path.endswith(".deleted"):
-                bp = base_path[:-8]
-                # remove all from out starting with base_path
-                out = [k for k in out if not k.startswith(bp)]
-                replaced = True
-            elif base_path.endswith(".replaced"):
-                bp = base_path[:-9]
-                # remove all from out starting with base_path
-                out = [k for k in out if not k.startswith(bp)]
-
-            if replaced:
-                out[base_path] = {"dirs": dirs, "files": files}
-            elif base_path in out:
-                out_dirs = set(out[base_path]["dirs"])
-                for d in dirs:
-                    if d.endswith(".deleted"):
-                        d_ = d[:-8]
-                        out_dirs.remove(d_)
-                    else:
-                        out_dirs.add(d)
-                out[base_path]["dirs"] = list(out_dirs)
-                out_files = set(out[base_path]["files"])
-                for f in files:
-                    if f.endswith(".deleted"):
-                        f_ = f[:-8]
-                        out_files.remove(f_)
-                    else:
-                        out_files.add(f)
-                out[base_path]["files"] = list(out_files)
-            else:
-                out[base_path] = {"dirs": dirs, "files": files}
-
-        for base_path, item in out.items():
-            yield base_path, item["dirs"], item["files"]
+    # walk() deliberately has no override here: ``AbstractFileSystem.walk``
+    # is implemented on top of ``ls`` (and ``info``), and our ``ls`` already
+    # performs the full overlay merge (tombstones, replacement markers,
+    # overlay-wins). The old hand-rolled override ignored ``path``, mangled
+    # ``detail=True`` results and crashed on tombstones ("'list' object has
+    # no attribute 'items'") — see issue #10.
 
     # def find(self, path, **kwargs) uses isdir, info, walk, isfile
     # def du(self, path, **kwargs): uses isdir, info, walk, isfile
