@@ -495,19 +495,22 @@ class TransparentFileSystem(AbstractFileSystem):
     def resolve_s3_target(self, path: str, for_write: bool = False):
         """Resolve `path` to (S3FileSystem, bucket, key) of the relevant layer.
 
-        Reads (``for_write=False``) resolve against `base_fs` — the overlay
-        is a sparse write-cache, so signed GET URLs must hit the backend
-        that actually holds the historical data. Writes (``for_write=True``)
-        resolve against `transparent_fs`, because that is where a write
-        through this filesystem would land; a presigned PUT signed against
-        `base_fs` would bypass the overlay's read-only contract.
+        Reads (``for_write=False``) resolve against the layer that actually
+        holds the file (via ``_check_exists_and_where``): a fresh
+        overlay-only file signed against `base_fs` would 404 on the
+        presigned GET. Files that live in the base — or do not exist at
+        all — resolve against `base_fs`. Writes (``for_write=True``)
+        always resolve against `transparent_fs` (no existence probe),
+        because that is where a write through this filesystem would land;
+        a presigned PUT signed against `base_fs` would bypass the
+        overlay's read-only contract.
 
         Parameters
         ----------
         path : str
         for_write : bool, optional
-            Resolve to the writable overlay instead of the read-only base.
-            Default False.
+            Resolve to the writable overlay instead of the layer that
+            holds the file. Default False.
 
         Returns
         -------
@@ -519,7 +522,11 @@ class TransparentFileSystem(AbstractFileSystem):
             When the selected layer is not backed by an `S3FileSystem`
             (e.g. a local overlay) and has no own ``resolve_s3_target``.
         """
-        target_fs = self.transparent_fs if for_write else self.base_fs
+        if for_write:
+            target_fs = self.transparent_fs
+        else:
+            ex = self._check_exists_and_where(path)
+            target_fs = self.transparent_fs if (ex.exists and ex.where == 0) else self.base_fs
         resolver = getattr(target_fs, "resolve_s3_target", None)
         if resolver is not None:
             return resolver(path, for_write=for_write)

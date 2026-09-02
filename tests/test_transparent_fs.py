@@ -254,12 +254,12 @@ class TestTransparentFS(unittest.TestCase):
 
 
 class TestResolveS3TargetWriteAware(unittest.TestCase):
-    """`resolve_s3_target(for_write=...)` — offline (S3FileSystem is lazy,
+    """`resolve_s3_target(for_write=True)` — offline (S3FileSystem is lazy,
     instantiation does not connect).
 
-    Reads resolve against `base_fs` (unchanged behavior); writes must
-    resolve against the writable overlay so presigned PUT URLs target the
-    bucket the overlay actually writes to.
+    Writes must resolve against the writable overlay so presigned PUT URLs
+    target the bucket the overlay actually writes to. Read resolution is
+    covered by ``TestResolveS3TargetReadLayerAware`` below.
     """
 
     def _s3_config(self, relative_to_path, tag):
@@ -278,11 +278,6 @@ class TestResolveS3TargetWriteAware(unittest.TestCase):
             base_fs=self._s3_config("prod-bucket", "base"),
             transparent_fs=self._s3_config("dev-bucket/dev/upload", "overlay"),
         )
-
-    def test_default_resolves_base(self):
-        _s3_fs, bucket, key = self._overlay().resolve_s3_target("foo.bin")
-        self.assertEqual("prod-bucket", bucket)
-        self.assertEqual("foo.bin", key)
 
     def test_for_write_resolves_overlay(self):
         _s3_fs, bucket, key = self._overlay().resolve_s3_target("foo.bin", for_write=True)
@@ -304,3 +299,73 @@ class TestResolveS3TargetWriteAware(unittest.TestCase):
         )
         with self.assertRaises(NotImplementedError):
             fs.resolve_s3_target("foo.bin", for_write=True)
+
+
+class TestResolveS3TargetReadLayerAware(unittest.TestCase):
+    """Read resolution must pick the layer that actually holds the file.
+
+    A fresh overlay-only upload (dev: everything written lands on the
+    overlay bucket) signed against the base bucket would 404 on the
+    presigned GET. Offline — the layers' ``exists`` probes are stubbed;
+    the S3FileSystem objects stay lazy and never connect.
+    """
+
+    def _s3_config(self, relative_to_path, tag):
+        # Distinct config_kwargs per fs to sidestep the s3fs instance cache.
+        return {
+            "protocol": "s3",
+            "key": "test-key",
+            "secret": "test-secret",
+            "endpoint_url": "http://127.0.0.1:9",
+            "config_kwargs": {"user_agent": tag},
+            "relative_to_path": relative_to_path,
+        }
+
+    def _overlay(self, overlay_has=(), base_has=()):
+        fs = TransparentFileSystem(
+            base_fs=self._s3_config("prod-bucket", "rbase"),
+            transparent_fs=self._s3_config("dev-bucket/dev/upload", "roverlay"),
+        )
+        fs.transparent_fs.exists = lambda p: p in overlay_has
+        fs.base_fs.exists = lambda p: p in base_has
+        return fs
+
+    def test_read_overlay_only_file_resolves_overlay(self):
+        fs = self._overlay(overlay_has={"foo.bin"})
+        _s3_fs, bucket, key = fs.resolve_s3_target("foo.bin")
+        self.assertEqual("dev-bucket", bucket)
+        self.assertEqual("dev/upload/foo.bin", key)
+
+    def test_read_base_file_resolves_base(self):
+        fs = self._overlay(base_has={"foo.bin"})
+        _s3_fs, bucket, key = fs.resolve_s3_target("foo.bin")
+        self.assertEqual("prod-bucket", bucket)
+        self.assertEqual("foo.bin", key)
+
+    def test_read_missing_file_falls_back_to_base(self):
+        fs = self._overlay()
+        _s3_fs, bucket, key = fs.resolve_s3_target("foo.bin")
+        self.assertEqual("prod-bucket", bucket)
+        self.assertEqual("foo.bin", key)
+
+    def test_tombstoned_file_resolves_base(self):
+        """A ``.deleted`` tombstone hides the base file; resolution then
+        falls back to base. Callers check ``exists`` on the merged view
+        first, so this path is unreachable for real downloads."""
+        fs = self._overlay(overlay_has={"foo.bin.deleted"}, base_has={"foo.bin"})
+        _s3_fs, bucket, key = fs.resolve_s3_target("foo.bin")
+        self.assertEqual("prod-bucket", bucket)
+
+    def test_for_write_needs_no_layer_probe(self):
+        """Write resolution is static (always the overlay) and must not
+        spend network calls on existence probes."""
+        fs = self._overlay()
+
+        def _boom(_p):
+            raise AssertionError("write resolve must not probe layer existence")
+
+        fs.transparent_fs.exists = _boom
+        fs.base_fs.exists = _boom
+        _s3_fs, bucket, key = fs.resolve_s3_target("foo.bin", for_write=True)
+        self.assertEqual("dev-bucket", bucket)
+        self.assertEqual("dev/upload/foo.bin", key)

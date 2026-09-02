@@ -770,9 +770,24 @@ class TestResolveS3TargetDelegation(unittest.TestCase):
         )
 
     def test_read_resolves_base(self):
-        _s3_fs, bucket, key = self._nested_with_overlay().resolve_s3_target("upload/foo.bin")
+        fs = self._nested_with_overlay()
+        sub, _root, _nested = fs._get_filesystem("upload/foo.bin")
+        # Offline: stub the overlay's layer probes (read resolution is
+        # layer-aware since 0.1.6b2).
+        sub.transparent_fs.exists = lambda p: False
+        sub.base_fs.exists = lambda p: p == "foo.bin"
+        _s3_fs, bucket, key = fs.resolve_s3_target("upload/foo.bin")
         self.assertEqual("prod-bucket", bucket)
         self.assertEqual("foo.bin", key)
+
+    def test_read_overlay_only_file_resolves_overlay(self):
+        fs = self._nested_with_overlay()
+        sub, _root, _nested = fs._get_filesystem("upload/foo.bin")
+        sub.transparent_fs.exists = lambda p: p == "foo.bin"
+        sub.base_fs.exists = lambda p: False
+        _s3_fs, bucket, key = fs.resolve_s3_target("upload/foo.bin")
+        self.assertEqual("dev-bucket", bucket)
+        self.assertEqual("dev/upload/foo.bin", key)
 
     def test_for_write_resolves_overlay(self):
         fs = self._nested_with_overlay()

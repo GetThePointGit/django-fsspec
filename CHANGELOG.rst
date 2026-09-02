@@ -1,6 +1,22 @@
 CHANGELOG
 =========
 
+0.1.6b2 (unreleased)
+--------------------
+
+Layer-aware read resolution for ``resolve_s3_target`` on overlay
+(transparent) configurations, so presigned GET URLs for overlay-only
+files no longer point at the base bucket (404).
+
+- ``TransparentFileSystem.resolve_s3_target(for_write=False)`` now picks
+  the layer that actually holds the file (via the existing
+  ``_check_exists_and_where`` probe): overlay-only files resolve against
+  the overlay, base files — and non-existent paths — against the base.
+  Write resolution is unchanged (always the overlay, no probe).
+- Overlay reads through ``NestedFileSystem`` and
+  ``FsspecStorage.url_signed(method='GET')`` inherit this via the
+  existing delegation.
+
 0.1.6b1 (unreleased)
 --------------------
 
