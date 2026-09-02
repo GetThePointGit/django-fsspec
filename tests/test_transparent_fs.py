@@ -251,3 +251,56 @@ class TestTransparentFS(unittest.TestCase):
         # …but a new tombstone for the directory itself is recorded so the
         # base directory does not reappear in the merged view.
         self.assertTrue(Path(root_transparent_fs, "ghost.deleted").exists())
+
+
+class TestResolveS3TargetWriteAware(unittest.TestCase):
+    """`resolve_s3_target(for_write=...)` — offline (S3FileSystem is lazy,
+    instantiation does not connect).
+
+    Reads resolve against `base_fs` (unchanged behavior); writes must
+    resolve against the writable overlay so presigned PUT URLs target the
+    bucket the overlay actually writes to.
+    """
+
+    def _s3_config(self, relative_to_path, tag):
+        # Distinct config_kwargs per fs to sidestep the s3fs instance cache.
+        return {
+            "protocol": "s3",
+            "key": "test-key",
+            "secret": "test-secret",
+            "endpoint_url": "http://127.0.0.1:9",
+            "config_kwargs": {"user_agent": tag},
+            "relative_to_path": relative_to_path,
+        }
+
+    def _overlay(self):
+        return TransparentFileSystem(
+            base_fs=self._s3_config("prod-bucket", "base"),
+            transparent_fs=self._s3_config("dev-bucket/dev/upload", "overlay"),
+        )
+
+    def test_default_resolves_base(self):
+        _s3_fs, bucket, key = self._overlay().resolve_s3_target("foo.bin")
+        self.assertEqual("prod-bucket", bucket)
+        self.assertEqual("foo.bin", key)
+
+    def test_for_write_resolves_overlay(self):
+        _s3_fs, bucket, key = self._overlay().resolve_s3_target("foo.bin", for_write=True)
+        self.assertEqual("dev-bucket", bucket)
+        self.assertEqual("dev/upload/foo.bin", key)
+
+    def test_for_write_local_overlay_raises(self):
+        """A local overlay cannot issue presigned URLs — must raise, so the
+        caller can map it to an HTTP 501."""
+        root_base_fs.mkdir(parents=True, exist_ok=True)
+        root_transparent_fs.mkdir(parents=True, exist_ok=True)
+        fs = TransparentFileSystem(
+            base_fs=self._s3_config("prod-bucket", "base2"),
+            transparent_fs={
+                "protocol": "file",
+                "auto_mkdir": True,
+                "relative_to_path": root_transparent_fs,
+            },
+        )
+        with self.assertRaises(NotImplementedError):
+            fs.resolve_s3_target("foo.bin", for_write=True)

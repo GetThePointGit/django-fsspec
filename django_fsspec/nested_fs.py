@@ -200,13 +200,21 @@ class NestedFileSystem(AbstractFileSystem):
             return self.file_systems["default"], "", path_str
         return None, "", path_str
 
-    def resolve_s3_target(self, path: str):
+    def resolve_s3_target(self, path: str, for_write: bool = False):
         """Resolve `path` to the underlying (S3FileSystem, bucket, key).
+
+        When the matched sub-filesystem has its own ``resolve_s3_target``
+        (e.g. a `TransparentFileSystem` overlay), delegate to it so the
+        sub-filesystem can pick the right layer; otherwise unwrap directly.
 
         Parameters
         ----------
         path : str
             Path in nested notation (e.g. ``'video/foo.mp4'``).
+        for_write : bool, optional
+            When True, resolve to the target a *write* would land on
+            (relevant for overlay filesystems, where reads and writes hit
+            different backends). Default False.
 
         Returns
         -------
@@ -227,6 +235,9 @@ class NestedFileSystem(AbstractFileSystem):
         fs, _root_path, nested_path = self._get_filesystem(path)
         if fs is None:
             raise FileNotFoundError(f"No sub-filesystem for path {path!r}")
+        resolver = getattr(fs, "resolve_s3_target", None)
+        if resolver is not None:
+            return resolver(nested_path, for_write=for_write)
         return unwrap_s3_target(fs, nested_path)
 
     def mkdir(self, path, *args, **kwargs):

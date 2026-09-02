@@ -492,17 +492,22 @@ class TransparentFileSystem(AbstractFileSystem):
         fs = self.__leading_fs(path)
         return fs.modified(path)
 
-    def resolve_s3_target(self, path: str):
-        """Resolve `path` to the base filesystem's (S3FileSystem, bucket, key).
+    def resolve_s3_target(self, path: str, for_write: bool = False):
+        """Resolve `path` to (S3FileSystem, bucket, key) of the relevant layer.
 
-        Signing URLs against a transparent layer is meaningless (the
-        writeable overlay is typically local), so this always delegates to
-        `base_fs`. Callers that want signed URLs should hit the real
-        backend.
+        Reads (``for_write=False``) resolve against `base_fs` — the overlay
+        is a sparse write-cache, so signed GET URLs must hit the backend
+        that actually holds the historical data. Writes (``for_write=True``)
+        resolve against `transparent_fs`, because that is where a write
+        through this filesystem would land; a presigned PUT signed against
+        `base_fs` would bypass the overlay's read-only contract.
 
         Parameters
         ----------
         path : str
+        for_write : bool, optional
+            Resolve to the writable overlay instead of the read-only base.
+            Default False.
 
         Returns
         -------
@@ -511,15 +516,14 @@ class TransparentFileSystem(AbstractFileSystem):
         Raises
         ------
         NotImplementedError
-            When `base_fs` is not backed by an `S3FileSystem`, or when it
-            is itself a composed filesystem without a
-            ``resolve_s3_target`` method.
+            When the selected layer is not backed by an `S3FileSystem`
+            (e.g. a local overlay) and has no own ``resolve_s3_target``.
         """
-        base_fs = self.base_fs
-        resolver = getattr(base_fs, "resolve_s3_target", None)
+        target_fs = self.transparent_fs if for_write else self.base_fs
+        resolver = getattr(target_fs, "resolve_s3_target", None)
         if resolver is not None:
-            return resolver(path)
-        return unwrap_s3_target(base_fs, path)
+            return resolver(path, for_write=for_write)
+        return unwrap_s3_target(target_fs, path)
 
 
 # Register the filesystem

@@ -452,7 +452,7 @@ class FsspecStorage(Storage):
                     "(presigned URLs bypass server-side collision policy)."
                 )
 
-        s3_fs, bucket, key = self._resolve_s3_target(name)
+        s3_fs, bucket, key = self._resolve_s3_target(name, for_write=(method == "PUT"))
 
         # Fast path: GET without custom response headers → s3fs can sign
         # it itself (wraps sync + boto3 under the hood). Saves creating an
@@ -471,12 +471,16 @@ class FsspecStorage(Storage):
             ExpiresIn=expires,
         )
 
-    def _resolve_s3_target(self, name):
-        """Resolve `name` via NestedFileSystem if present, else unwrap directly.
+    def _resolve_s3_target(self, name, for_write=False):
+        """Resolve `name` via the filesystem's own resolver, else unwrap directly.
 
         Parameters
         ----------
         name : str
+        for_write : bool, optional
+            Resolve to the backend a *write* would land on (matters for
+            overlay filesystems where reads and writes hit different
+            backends). Default False.
 
         Returns
         -------
@@ -484,7 +488,7 @@ class FsspecStorage(Storage):
         """
         resolver = getattr(self.filesystem, "resolve_s3_target", None)
         if resolver is not None:
-            return resolver(name)
+            return resolver(name, for_write=for_write)
         return unwrap_s3_target(self.filesystem, name)
 
     def get_accessed_time(self, name):

@@ -1,6 +1,29 @@
 CHANGELOG
 =========
 
+0.1.6b1 (unreleased)
+--------------------
+
+Write-aware ``resolve_s3_target`` so presigned PUT URLs work on overlay
+(transparent) configurations.
+
+- New optional keyword ``for_write=False`` on
+  ``NestedFileSystem.resolve_s3_target``,
+  ``TransparentFileSystem.resolve_s3_target`` and
+  ``FsspecStorage._resolve_s3_target``.
+- ``TransparentFileSystem.resolve_s3_target(for_write=True)`` resolves
+  against the writable ``transparent_fs`` overlay instead of the
+  read-only ``base_fs`` — a presigned PUT signed against ``base_fs``
+  would bypass the overlay's read-only contract. Reads keep resolving
+  against ``base_fs`` (unchanged). A local (non-S3) overlay raises
+  ``NotImplementedError`` so callers can map it to an HTTP 501.
+- ``NestedFileSystem.resolve_s3_target`` now delegates to a matched
+  sub-filesystem's own ``resolve_s3_target`` when it has one (e.g. a
+  transparent overlay), instead of blindly unwrapping — previously an
+  overlay sub-fs raised ``NotImplementedError`` even for reads.
+- ``FsspecStorage.url_signed(method='PUT')`` resolves with
+  ``for_write=True``; GET signing is unchanged.
+
 0.1.3 (unreleased)
 ------------------
 

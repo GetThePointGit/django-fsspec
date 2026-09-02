@@ -740,3 +740,42 @@ class TestMvCrossFsVerification(unittest.TestCase):
 
         self.assertTrue(self.fs.exists("a/source.txt"))
         self.assertFalse(self.fs.exists("b/dest.txt"))
+
+
+class TestResolveS3TargetDelegation(unittest.TestCase):
+    """NestedFileSystem must delegate `resolve_s3_target` to a sub-fs that
+    has its own resolver (e.g. a transparent overlay), instead of blindly
+    unwrapping — offline (S3FileSystem is lazy, instantiation does not
+    connect)."""
+
+    def _s3_config(self, relative_to_path, tag):
+        return {
+            "protocol": "s3",
+            "key": "test-key",
+            "secret": "test-secret",
+            "endpoint_url": "http://127.0.0.1:9",
+            "config_kwargs": {"user_agent": tag},
+            "relative_to_path": relative_to_path,
+        }
+
+    def _nested_with_overlay(self):
+        return NestedFileSystem(
+            {
+                "upload": {
+                    "protocol": "transparent",
+                    "base_fs": self._s3_config("prod-bucket", "nbase"),
+                    "transparent_fs": self._s3_config("dev-bucket/dev/upload", "noverlay"),
+                },
+            }
+        )
+
+    def test_read_resolves_base(self):
+        _s3_fs, bucket, key = self._nested_with_overlay().resolve_s3_target("upload/foo.bin")
+        self.assertEqual("prod-bucket", bucket)
+        self.assertEqual("foo.bin", key)
+
+    def test_for_write_resolves_overlay(self):
+        fs = self._nested_with_overlay()
+        _s3_fs, bucket, key = fs.resolve_s3_target("upload/foo.bin", for_write=True)
+        self.assertEqual("dev-bucket", bucket)
+        self.assertEqual("dev/upload/foo.bin", key)
