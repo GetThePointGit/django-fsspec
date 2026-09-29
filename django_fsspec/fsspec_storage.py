@@ -2,6 +2,7 @@ import posixpath
 import warnings
 
 from django.core.exceptions import ImproperlyConfigured
+from django.core.files.base import File
 from django.core.files.storage import Storage
 from django.utils.crypto import get_random_string
 
@@ -16,6 +17,28 @@ from .utils import make_boto3_client_from_s3fs
 from .utils import unwrap_s3_target
 
 _UNSET = object()
+
+
+class FsspecFile(File):
+    """Django `File` wrapping an fsspec file object.
+
+    Django expects `Storage._open` to return a `File`: on a second call,
+    `FieldFile.open()` calls `self.file.open(mode)`. A bare fsspec file
+    (`s3fs.S3File`, `LocalFileOpener`, ...) has no `open`, and `File.open`
+    itself can only reopen from a local path. This class reopens through the
+    storage instead.
+    """
+
+    def __init__(self, file, name, storage):
+        super().__init__(file, name)
+        self._storage = storage
+
+    def open(self, mode=None, *args, **kwargs):
+        if not self.closed:
+            self.seek(0)
+        else:
+            self.file = self._storage._open(self.name, mode or getattr(self.file, "mode", "rb")).file
+        return self
 
 
 class FsspecStorage(Storage):
@@ -280,7 +303,7 @@ class FsspecStorage(Storage):
             self._check_permission("write", name)
         else:
             self._check_permission("read", name)
-        return self.filesystem.open(name, mode)
+        return FsspecFile(self.filesystem.open(name, mode), name, self)
 
     def path(self, name):
         # Django's contract: Storage.path() is only valid for local

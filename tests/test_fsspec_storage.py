@@ -637,3 +637,41 @@ class TestDeleteIdempotency(TestCase):
         fake_fs.isdir.return_value = True
         storage.delete("some/dir")
         fake_fs.rm.assert_called_once_with("some/dir", recursive=True)
+
+
+class TestFieldFileReopen(TestCase):
+    """Calling `FieldFile.open()` twice on the same instance.
+
+    With `_file` already set, Django's `FieldFile.open` calls
+    `self.file.open(mode)`. That only works when `Storage._open` returns a Django
+    `File`; a bare fsspec file (e.g. `s3fs.S3File`) has no `.open` and raised
+    `AttributeError: 'S3File' object has no attribute 'open'`.
+    """
+
+    def setUp(self):
+        os.makedirs(test_data_dir, exist_ok=True)
+
+    def tearDown(self):
+        shutil.rmtree(test_data_dir, ignore_errors=True)
+
+    def test_fieldfile_can_be_opened_twice(self):
+        from test_app.models import FieldTestModel
+
+        obj = FieldTestModel()
+        obj.file.save("reopen.txt", ContentFile(b"0123456789"), save=False)
+
+        with obj.file.open("rb") as f:
+            self.assertEqual(f.read(4), b"0123")
+        with obj.file.open("rb") as f:
+            self.assertEqual(f.read(4), b"0123")
+
+    def test_storage_open_returns_django_file(self):
+        from django.core.files.base import File
+
+        storage = storages["default"]
+        name = storage.save("wrapped.txt", ContentFile(b"abc"))
+        with storage.open(name) as f:
+            self.assertIsInstance(f, File)
+            self.assertEqual(f.name, name)
+            self.assertEqual(f.read(), b"abc")
+        storage.delete(name)
