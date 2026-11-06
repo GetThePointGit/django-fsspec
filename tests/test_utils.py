@@ -87,3 +87,29 @@ class TestBuildVirtualHostedUrl(unittest.TestCase):
         url = build_virtual_hosted_url(s3, "tapp-tijhuis-media", "media/media/2223/photos/xxx.jpg")
         self.assertEqual(url, "https://tapp-tijhuis-media.example.com/media/media/2223/photos/xxx.jpg")
         self.assertNotIn("/", url.split("://", 1)[1].split("/", 1)[0])
+
+
+class TestPresignClientReuse(unittest.TestCase):
+    """Regression for fsspec/s3fs#1019 (s3fs 2026.4.0): url() rebuilt the client on every call."""
+
+    def test_url_signed_reuses_s3_client(self):
+        from django_fsspec import FsspecStorage
+
+        storage = FsspecStorage(
+            storage_config={
+                "protocol": "s3",
+                "key": "x",
+                "secret": "y",
+                "endpoint_url": "https://s3.nl-ams.scw.cloud",
+                "relative_to_path": "dummy-bucket",
+                "skip_instance_cache": True,
+            },
+        )
+        s3_fs, _bucket, _key = storage._resolve_s3_target("x.bin")
+        url = storage.url_signed("x.bin", expires=60)
+        self.assertIn("dummy-bucket", url)
+        client = s3_fs._s3
+        self.assertIsNotNone(client)
+        for _ in range(5):
+            storage.url_signed("x.bin", expires=60)
+            self.assertIs(s3_fs._s3, client)

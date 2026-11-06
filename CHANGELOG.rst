@@ -1,6 +1,15 @@
 CHANGELOG
 =========
 
+0.1.6 (unreleased)
+------------------
+
+- Raised the lower bound of the ``s3`` extra to ``s3fs>=2026.6.0`` and of the
+  base dependency to ``fsspec>=2026.6.0``. s3fs 2026.4.0 builds a new
+  aiobotocore client on every ``S3FileSystem.url()``/``sign()`` call that is
+  never closed (fsspec/s3fs#1019, fixed in 2026.6.0), which leaks memory in
+  ``FsspecStorage.url_signed()``. See #14.
+
 0.1.3 (unreleased)
 ------------------
 
