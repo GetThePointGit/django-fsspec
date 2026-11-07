@@ -1,7 +1,7 @@
 CHANGELOG
 =========
 
-0.1.6 (unreleased)
+0.1.6 (2026-11-07)
 ------------------
 
 - Raised the lower bound of the ``s3`` extra to ``s3fs>=2026.6.0`` and of the
