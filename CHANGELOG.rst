@@ -1,6 +1,20 @@
 CHANGELOG
 =========
 
+0.1.7 (2026-11-11)
+------------------
+
+- ``FsspecStorage.open()`` now returns a ``FsspecFile`` (a
+  ``django.core.files.base.File`` subclass) instead of the raw fsspec file
+  object. Django's ``FieldFile.open()`` calls ``self.file.open(mode)`` once the
+  file object has been fetched; raw fsspec files (``S3File``, ``MemoryFile``,
+  ``LocalFileOpener``) have no ``open()``, so a second ``FieldFile.open()``
+  raised ``AttributeError: 'S3File' object has no attribute 'open'``.
+  ``FsspecFile.open()`` rewinds an open file and reopens a closed one through
+  the storage (including the read/write permission check). Unknown attributes
+  fall through to the underlying fsspec file, so callers using e.g. ``fh.fs``
+  keep working.
+
 0.1.6 (2026-11-07)
 ------------------
 

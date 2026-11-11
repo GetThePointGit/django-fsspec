@@ -2,6 +2,7 @@ import posixpath
 import warnings
 
 from django.core.exceptions import ImproperlyConfigured
+from django.core.files.base import File
 from django.core.files.storage import Storage
 from django.utils.crypto import get_random_string
 
@@ -16,6 +17,64 @@ from .utils import make_boto3_client_from_s3fs
 from .utils import unwrap_s3_target
 
 _UNSET = object()
+
+
+class FsspecFile(File):
+    """Django-``File`` rond een fsspec-bestandsobject, dat opnieuw te openen is.
+
+    Django's ``FieldFile.open()`` roept ``self.file.open(mode)`` aan zodra het
+    bestandsobject al eens is opgehaald (bv. na een eerdere ``open()`` of
+    ``.size``). Ruwe fsspec-bestanden (``S3File``, ``MemoryFile``, ...) hebben
+    geen ``open()``, en Django's eigen ``File.open()`` valt bij een gesloten
+    bestand terug op ``os.path.exists``, wat voor remote backends niet werkt.
+    Deze wrapper opent daarom opnieuw via de storage, inclusief de
+    permissiecontrole.
+
+    Onbekende attributen worden doorgegeven aan het onderliggende
+    fsspec-bestand, zodat bestaande aanroepers (bv. ``fh.fs``) blijven werken.
+
+    Parameters
+    ----------
+    file : file-like
+        Het geopende fsspec-bestandsobject.
+    name : str
+        Naam van het bestand binnen de storage.
+    storage : FsspecStorage
+        De storage waarmee het bestand opnieuw geopend wordt.
+    mode : str
+        De modus waarin het bestand geopend is.
+    """
+
+    def __init__(self, file, name, storage, mode):
+        super().__init__(file, name)
+        self._storage = storage
+        self.mode = mode
+
+    def open(self, mode=None, *args, **kwargs):
+        """Spoel terug als het bestand open is, open anders opnieuw via de storage.
+
+        Parameters
+        ----------
+        mode : str, optional
+            Modus voor het opnieuw openen; standaard de oorspronkelijke modus.
+
+        Returns
+        -------
+        FsspecFile
+            Dit object, zodat ``with fh.open() as f`` werkt.
+        """
+        if not self.closed:
+            self.seek(0)
+        else:
+            self.mode = mode or self.mode
+            self.file = self._storage._open_raw(self.name, self.mode)
+        return self
+
+    def __getattr__(self, attr):
+        # Alleen aangeroepen als het attribuut niet op de wrapper zelf staat.
+        if attr.startswith("__") or attr == "file":
+            raise AttributeError(attr)
+        return getattr(self.file, attr)
 
 
 class FsspecStorage(Storage):
@@ -276,6 +335,23 @@ class FsspecStorage(Storage):
         return self.filesystem.ls(path, detail=True)
 
     def _open(self, name, mode="rb"):
+        return FsspecFile(self._open_raw(name, mode), name, self, mode)
+
+    def _open_raw(self, name, mode="rb"):
+        """Open ``name`` als ruw fsspec-bestand, na de permissiecontrole.
+
+        Parameters
+        ----------
+        name : str
+            Naam van het bestand binnen de storage.
+        mode : str
+            Bestandsmodus; schrijf-, append- en plus-modi vereisen schrijfrecht.
+
+        Returns
+        -------
+        file-like
+            Het fsspec-bestandsobject.
+        """
         if any(c in mode for c in ("w", "a", "x", "+")):
             self._check_permission("write", name)
         else:
