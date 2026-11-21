@@ -1,6 +1,13 @@
 CHANGELOG
 =========
 
+Unreleased
+----------
+
+- Django 6.1 added to the test matrix (tox and CI) and to the classifiers.
+  Django 5.1 (end of life) is no longer tested; the supported range
+  ``Django>=5.1,<7`` is unchanged.
+
 0.1.7 (2026-11-11)
 ------------------
 
