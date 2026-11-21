@@ -462,7 +462,7 @@ Full matrix (every supported Python × Django combination, via tox):
 
 ```bash
 pixi run tox                              # every env in tox.ini
-pixi run -- tox -e py3.12-django5.1       # one env
+pixi run -- tox -e py3.12-django5.2       # one env
 pixi run -- tox -e ruff                   # the lint-only env
 ```
 
